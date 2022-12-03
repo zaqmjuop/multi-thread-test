@@ -1,20 +1,24 @@
 import React from "react";
 import { useWorker } from "../utils/useWorker";
-import { Switch, InputNumber, Button, Tag } from "antd";
+import { Switch, InputNumber, Button, Tag, Form, Input } from "antd";
 import "./WorkerTemplate.scss";
 import { Link } from "react-router-dom";
 
+type func = (...args: any[]) => any;
 interface WorkerTemplateProps {
   title: string;
-  testData: { simpleFunc: (...args: any[]) => any; args: any[] };
+  testData: { simpleFunc: func; args: any[] };
 }
 
-const maxConcurrency = 3; // navigator.hardwareConcurrency || 0;
+const maxConcurrency = navigator.hardwareConcurrency || 0;
 
 class WorkerTemplate extends React.Component<WorkerTemplateProps> {
   state = {
+    simpleFunc: (() => void 0) as func,
+    funcString: "",
+    funcStringError: "",
     workerFunc: (() => {}) as ReturnType<typeof useWorker>,
-    concurrency: maxConcurrency - 1,
+    concurrency: Math.min(maxConcurrency - 1, 2),
     running: false,
     syncScore: 0,
     workerScore: 0,
@@ -22,13 +26,20 @@ class WorkerTemplate extends React.Component<WorkerTemplateProps> {
     workerAble: true,
     settingCount: "",
     editConcurrency: false,
+    editFunc: false,
+    //
+    args: [] as any[],
+    editArgs: false,
+    argsString: "",
+    editArgsError: "",
   };
   constructor(props: WorkerTemplateProps) {
     super(props);
-    const workerFunc = useWorker(
-      props.testData.simpleFunc,
-      this.state.concurrency
-    );
+    const { simpleFunc, args } = props.testData;
+    this.state.simpleFunc = simpleFunc;
+    this.state.funcString = this.state.simpleFunc.toString();
+    this.state.args = args;
+    const workerFunc = useWorker(this.state.simpleFunc, this.state.concurrency);
     this.state.workerFunc = workerFunc;
   }
 
@@ -36,7 +47,7 @@ class WorkerTemplate extends React.Component<WorkerTemplateProps> {
     if (!this.state.running || !this.state.syncAble) {
       return;
     }
-    const { simpleFunc, args } = this.props.testData;
+    const { simpleFunc, args } = this.state;
     await simpleFunc(...args);
     if (!this.state.running || !this.state.syncAble) {
       return;
@@ -50,7 +61,7 @@ class WorkerTemplate extends React.Component<WorkerTemplateProps> {
     if (!this.state.running || !this.state.workerAble) {
       return;
     }
-    await this.state.workerFunc(...this.props.testData.args);
+    await this.state.workerFunc(...this.state.args);
 
     if (!this.state.running || !this.state.workerAble) {
       return;
@@ -98,10 +109,15 @@ class WorkerTemplate extends React.Component<WorkerTemplateProps> {
   };
 
   submitConcurrency = (concurrency: number) => {
+    this.setState({ concurrency });
+    this.initWorkerFunc();
+  };
+
+  initWorkerFunc = () => {
+    const workerFunc = useWorker(this.state.simpleFunc, this.state.concurrency);
     this.state.workerFunc.terminate?.();
     this.reset();
-    const workerFunc = useWorker(this.props.testData.simpleFunc, concurrency);
-    return this.setState({ workerFunc, concurrency });
+    return this.setState({ workerFunc });
   };
 
   toggleEditConcurrency = () => {
@@ -109,6 +125,61 @@ class WorkerTemplate extends React.Component<WorkerTemplateProps> {
       running: false,
       editConcurrency: !this.state.editConcurrency,
     });
+  };
+
+  editFuncString = () => {
+    return this.setState({
+      editFunc: true,
+      funcString: this.state.simpleFunc.toString(),
+      funcStringError: "",
+    });
+  };
+
+  submitFuncString = () => {
+    const funcString = this.state.funcString;
+    try {
+      const simpleFunc = eval(funcString);
+      if (typeof simpleFunc === "function") {
+        this.setState({
+          simpleFunc,
+          funcStringError: "",
+          editFunc: false,
+        });
+        return this.initWorkerFunc();
+      } else {
+        this.setState({ funcStringError: `类型不是function` });
+      }
+    } catch (error) {
+      this.setState({ funcStringError: `${error}` });
+    }
+  };
+
+  editArgs = () => {
+    return this.setState({
+      editArgs: true,
+      argsString: JSON.stringify(this.state.args),
+      editArgsError: "",
+    });
+  };
+
+  submitEditArgs = () => {
+    const argsString = this.state.argsString;
+    try {
+      const args = JSON.parse(argsString);
+      if (Array.isArray(args)) {
+        this.setState({
+          args,
+          editArgs: false,
+          argsString: "",
+          editArgsError: "",
+        });
+        return this.reset();
+      } else {
+        this.setState({ editArgsError: `类型不是Array` });
+      }
+    } catch (error) {
+      this.setState({ editArgsError: `${error}` });
+    }
   };
 
   render() {
@@ -155,14 +226,87 @@ class WorkerTemplate extends React.Component<WorkerTemplateProps> {
       </span>
     );
 
+    const funcForm = this.state.editFunc ? (
+      <Form layout="inline">
+        <Button key={"submit"} type="primary" onClick={this.submitFuncString}>
+          修改
+        </Button>
+        <Button
+          key={"cancel"}
+          onClick={() => this.setState({ editFunc: !this.state.editFunc })}
+        >
+          取消
+        </Button>
+        <Input.TextArea
+          value={this.state.funcString}
+          rows={24}
+          onInput={(event: any) => {
+            const value = event?.target?.value;
+            if (typeof value === "string") {
+              this.setState({ funcString: value });
+            }
+          }}
+        ></Input.TextArea>
+        <span style={{ color: "#f00" }}> {this.state.funcStringError}</span>
+      </Form>
+    ) : (
+      <div style={{ textAlign: "left" }}>
+        <Button key={"edit"} type="link" onClick={this.editFuncString}>
+          编辑
+        </Button>
+        <div>
+          {this.state.simpleFunc
+            .toString()
+            .split(/\n/)
+            .map((str, index) => {
+              return <p key={index}>{str}</p>;
+            })}
+        </div>
+      </div>
+    );
+
+    const argsForm = this.state.editArgs ? (
+      <div>
+        <Form layout="inline">
+          <Button key={"submit"} type="primary" onClick={this.submitEditArgs}>
+            修改
+          </Button>
+          <Button
+            key={"cancel"}
+            onClick={() => this.setState({ editArgs: !this.state.editArgs })}
+          >
+            取消
+          </Button>
+          <Input.TextArea
+            value={this.state.argsString}
+            rows={8}
+            onInput={(event: any) => {
+              const value = event?.target?.value;
+              if (typeof value === "string") {
+                this.setState({ argsString: value });
+              }
+            }}
+          ></Input.TextArea>
+          <span style={{ color: "#f00" }}> {this.state.editArgsError}</span>
+        </Form>
+      </div>
+    ) : (
+      <div>
+        <Button key={"edit"} type="link" onClick={this.editArgs}>
+          编辑
+        </Button>
+        <p> {JSON.stringify(this.state.args)}</p>
+      </div>
+    );
+
     return (
       <div className="worker-template">
         <div>
           <div className="flex-center">
-            <Link to={'/'}>首页</Link>
-            <h1 style={{flexGrow: 1}}>{this.props.title}</h1>
+            <Link to={"/"}>首页</Link>
+            <h1 style={{ flexGrow: 1 }}>{this.props.title}</h1>
           </div>
-      
+
           <p style={{ textAlign: "left" }}>
             当前浏览器最大并发数：<Tag color="purple">{maxConcurrency}</Tag>
           </p>
@@ -230,15 +374,11 @@ class WorkerTemplate extends React.Component<WorkerTemplateProps> {
         </div>
         <div>
           <p>函数：</p>
-          <div style={{ textAlign: "left" }}>
-            {this.props.testData.simpleFunc.toString()}
-          </div> 
+          {funcForm}
         </div>
         <div>
           <p>参数：</p>
-          <div
-            style={{ textAlign: "left" }}
-          >{`${this.props.testData.args}`}</div>
+          <div style={{ textAlign: "left" }}>{argsForm}</div>
         </div>
       </div>
     );
