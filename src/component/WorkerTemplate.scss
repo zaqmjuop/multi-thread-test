@@ -1,0 +1,26 @@
+.worker-template { 
+  width: 600px;
+  .row {
+    list-style: none;
+    text-align: left;
+  }
+  .flex-justify{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .flex-center{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .half-line{
+    display: inline-block;
+    width: 50%;
+    height: 100%;
+  }
+  .text-overflow{
+    word-wrap: break-word;
+    word-break: break-all; 
+  }
+}
