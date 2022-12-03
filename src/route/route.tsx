@@ -1,9 +1,8 @@
-import { createBrowserRouter, Router } from "react-router-dom";
+import { createHashRouter } from "react-router-dom";
 import Overview from "../pages/Overview";
 import WorkerTest1 from "../pages/WorkerTest1";
 import WorkerTest2 from "../pages/WorkerTest2";
 import WorkerTest3 from "../pages/WorkerTest3";
-
 export const workerTests = [
   {
     path: "/workerTest1",
@@ -19,7 +18,7 @@ export const workerTests = [
   },
 ];
 
-const routes = createBrowserRouter([
+const routes = createHashRouter([
   {
     path: "/",
     element: <Overview />,
