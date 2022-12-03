@@ -9,12 +9,12 @@ interface WorkerTemplateProps {
   testData: { simpleFunc: (...args: any[]) => any; args: any[] };
 }
 
-const maxConcurrency = 3; // navigator.hardwareConcurrency || 0;
+const maxConcurrency = navigator.hardwareConcurrency || 0;
 
 class WorkerTemplate extends React.Component<WorkerTemplateProps> {
   state = {
     workerFunc: (() => {}) as ReturnType<typeof useWorker>,
-    concurrency: maxConcurrency - 1,
+    concurrency: Math.min(maxConcurrency - 1, 2),
     running: false,
     syncScore: 0,
     workerScore: 0,
@@ -159,10 +159,10 @@ class WorkerTemplate extends React.Component<WorkerTemplateProps> {
       <div className="worker-template">
         <div>
           <div className="flex-center">
-            <Link to={'/'}>首页</Link>
-            <h1 style={{flexGrow: 1}}>{this.props.title}</h1>
+            <Link to={"/"}>首页</Link>
+            <h1 style={{ flexGrow: 1 }}>{this.props.title}</h1>
           </div>
-      
+
           <p style={{ textAlign: "left" }}>
             当前浏览器最大并发数：<Tag color="purple">{maxConcurrency}</Tag>
           </p>
@@ -232,7 +232,7 @@ class WorkerTemplate extends React.Component<WorkerTemplateProps> {
           <p>函数：</p>
           <div style={{ textAlign: "left" }}>
             {this.props.testData.simpleFunc.toString()}
-          </div> 
+          </div>
         </div>
         <div>
           <p>参数：</p>
