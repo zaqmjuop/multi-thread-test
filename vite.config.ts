@@ -17,4 +17,5 @@ export default defineConfig({
   build: {
     outDir: "docs",
   },
+  base: "multi-thread-test", // git-page 基础路径
 });
