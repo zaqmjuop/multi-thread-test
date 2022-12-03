@@ -71,7 +71,7 @@ class WorkerTemplate extends React.Component<WorkerTemplateProps> {
       this.state.workerFunc.getSettingCount?.() || this.state.settingCount;
     this.setState({});
     return this.state.concurrency >= 1
-      ? this.workerPolling()
+      ? this.workerPollingItem()
       : setTimeout(() => this.workerPollingItem());
   };
 
@@ -101,6 +101,7 @@ class WorkerTemplate extends React.Component<WorkerTemplateProps> {
       workerScore: 0,
       syncAble: true,
       workerAble: true,
+      settingCount: ''
     });
   };
 
@@ -355,7 +356,7 @@ class WorkerTemplate extends React.Component<WorkerTemplateProps> {
             </span>
           </li>
           <li className="row">
-            <span>负担数</span>
+            <span>线程任务队列数</span>
             <span>{this.state.settingCount}</span>
           </li>
         </ul>
