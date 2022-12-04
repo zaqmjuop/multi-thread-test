@@ -26,6 +26,18 @@ type workerFunc<F extends (...agrs: any[]) => any> = Async<F> & {
 
 type workerState = { worker: Worker; settingCount: number };
 
+type task<F extends (...agrs: any[]) => any> = {
+  args: Parameters<F>;
+  resolve: (value: ReturnType<F>) => void;
+  reject: (err: string) => void;
+};
+
+type traceItem<F extends (...agrs: any[]) => any> = {
+  resolve: (value: ReturnType<F>) => void;
+  reject: (err: string) => void;
+  workerState: workerState;
+};
+
 export const useWorker = <F extends func>(
   func: F,
   maxConcurrency: number = 1
@@ -53,84 +65,95 @@ export const useWorker = <F extends func>(
 
   // worker 列表
   const workerStateList: workerState[] = [];
+
+  const taskQueue: Array<task<F>> = [];
+
+  const traceTaskMap: Record<string, traceItem<F>> = {};
+
+  const exec = (workerState: workerState) => {
+    if (workerState.settingCount) {
+      return;
+    }
+    const argItem = taskQueue[0];
+    if (!argItem) {
+      return;
+    } else {
+      taskQueue.shift();
+    }
+    // 用 worker 执行函数
+    const { args, resolve, reject } = argItem;
+    const traceId = getTraceId();
+    workerState.settingCount++;
+    traceTaskMap[traceId] = {
+      resolve,
+      reject,
+      workerState,
+    };
+    workerState.worker.postMessage({ args, traceId });
+  };
+
+  const handleMessage = (
+    e: MessageEvent<
+      | {
+          traceId: string;
+          type: "setup";
+        }
+      | {
+          traceId: string;
+          type: "reject";
+          error: string;
+        }
+      | {
+          traceId: string;
+          type: "resolve";
+          data: ReturnType<F>;
+        }
+    >
+  ) => {
+    const traceItem = traceTaskMap[e.data.traceId];
+
+    if (!traceItem) {
+      return;
+    }
+    const { resolve, reject, workerState } = traceItem;
+    switch (e.data.type) {
+      case "setup":
+        workerState.settingCount--;
+        // 如果当前worker空了 并且队列里有参数，执行
+        if (workerState.settingCount === 0) {
+          exec(workerState);
+        }
+        break;
+      case "resolve":
+        delete traceTaskMap[e.data.traceId];
+        resolve(e.data.data);
+        break;
+      case "reject":
+        delete traceTaskMap[e.data.traceId];
+        reject(e.data.error);
+        break;
+    }
+  };
+
   for (let i = 0; i < concurrency; i++) {
     const worker = new Worker(
       `data:application/javascript,${messageHandlerString}`
     );
+
+    //
+    worker.onmessage = handleMessage;
+    //
     workerStateList.push({ worker, settingCount: 0 });
   }
 
   const terminate = () =>
     workerStateList.forEach((item) => item.worker.terminate());
 
-  const argList: Array<{
-    args: Parameters<F>;
-    resolve: (value: ReturnType<F>) => void;
-    reject: (err: string) => void;
-  }> = [];
-
-  const exec = (workerState: workerState) => {
-    if (workerState.settingCount) {
-      return;
-    }
-    const argItem = argList[0];
-    if (!argItem) {
-      return;
-    } else {
-      argList.shift();
-    }
-    // 用 worker 执行函数
-    const { args, resolve, reject } = argItem;
-    const traceId = getTraceId();
-    const handler = (
-      e: MessageEvent<
-        | {
-            traceId: string;
-            type: "setup";
-          }
-        | {
-            traceId: string;
-            type: "reject";
-            error: string;
-          }
-        | {
-            traceId: string;
-            type: "resolve";
-            data: ReturnType<F>;
-          }
-      >
-    ) => {
-      if (e.data.traceId !== traceId) {
-        return;
-      }
-      switch (e.data.type) {
-        case "setup":
-          workerState.settingCount--;
-          // 如果当前worker空了 并且队列里有参数，执行
-          if (workerState.settingCount===0) {
-            exec(workerState);
-          }
-          break;
-        case "resolve":
-          workerState.worker.removeEventListener("message", handler);
-          resolve(e.data.data);
-          break;
-        case "reject":
-          workerState.worker.removeEventListener("message", handler);
-          reject(e.data.error);
-          break;
-      }
-    };
-    workerState.worker.addEventListener("message", handler);
-    workerState.settingCount++;
-    workerState.worker.postMessage({ args, traceId });
-  };
-
   const workerFunc: workerFunc<F> = (
     ...args: Parameters<F>
   ): Promise<ReturnType<F>> => {
     const promise = new Promise<ReturnType<F>>((resolve, reject) => {
-      argList.push({ args, resolve, reject });
+      taskQueue.push({ args, resolve, reject });
       // 如果有空闲worker立即执行。
       const workerStateIndex = workerStateList.findIndex(
         (item) => item.settingCount === 0
