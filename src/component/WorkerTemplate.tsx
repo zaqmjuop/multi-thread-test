@@ -101,7 +101,7 @@ class WorkerTemplate extends React.Component<WorkerTemplateProps> {
       workerScore: 0,
       syncAble: true,
       workerAble: true,
-      settingCount: ''
+      settingCount: "",
     });
   };
 
@@ -136,12 +136,12 @@ class WorkerTemplate extends React.Component<WorkerTemplateProps> {
     });
   };
 
-  submitFuncString = () => {
+  submitFuncString = async () => {
     const funcString = this.state.funcString;
     try {
       const simpleFunc = eval(funcString);
       if (typeof simpleFunc === "function") {
-        this.setState({
+        await this.setState({
           simpleFunc,
           funcStringError: "",
           editFunc: false,
