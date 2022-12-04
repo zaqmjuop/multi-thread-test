@@ -63,57 +63,84 @@ export const useWorker = <F extends func>(
   const terminate = () =>
     workerStateList.forEach((item) => item.worker.terminate());
 
+  const argList: Array<{
+    args: Parameters<F>;
+    resolve: (value: ReturnType<F>) => void;
+    reject: (err: string) => void;
+  }> = [];
+
+  const exec = (workerState: workerState) => {
+    if (workerState.settingCount) {
+      return;
+    }
+    const argItem = argList[0];
+    if (!argItem) {
+      return;
+    } else {
+      argList.shift();
+    }
+    // 用 worker 执行函数
+    const { args, resolve, reject } = argItem;
+    const traceId = getTraceId();
+    const handler = (
+      e: MessageEvent<
+        | {
+            traceId: string;
+            type: "setup";
+          }
+        | {
+            traceId: string;
+            type: "reject";
+            error: string;
+          }
+        | {
+            traceId: string;
+            type: "resolve";
+            data: ReturnType<F>;
+          }
+      >
+    ) => {
+      if (e.data.traceId !== traceId) {
+        return;
+      }
+      switch (e.data.type) {
+        case "setup":
+          workerState.settingCount--;
+          // 如果当前worker空了 并且队列里有参数，执行
+          if (workerState.settingCount===0) {
+            exec(workerState);
+          }
+          break;
+        case "resolve":
+          workerState.worker.removeEventListener("message", handler);
+          resolve(e.data.data);
+          break;
+        case "reject":
+          workerState.worker.removeEventListener("message", handler);
+          reject(e.data.error);
+          break;
+      }
+    };
+    workerState.worker.addEventListener("message", handler);
+    workerState.settingCount++;
+    workerState.worker.postMessage({ args, traceId });
+  };
+
   const workerFunc: workerFunc<F> = (
     ...args: Parameters<F>
   ): Promise<ReturnType<F>> => {
-    // 取出一个比较空闲的 worker
-    let workerState: workerState = workerStateList[0];
-    for (let i = 1; i < workerStateList.length; i++) {
-      if (workerStateList[i].settingCount < workerState.settingCount) {
-        workerState = workerStateList[i];
-      }
-    }
-    // 用 worker 执行函数
-    const traceId = getTraceId();
     const promise = new Promise<ReturnType<F>>((resolve, reject) => {
-      const handler = (
-        e: MessageEvent<
-          | {
-              traceId: string;
-              type: "setup";
-            }
-          | {
-              traceId: string;
-              type: "reject";
-              error: string;
-            }
-          | {
-              traceId: string;
-              type: "resolve";
-              data: ReturnType<F>;
-            }
-        >
-      ) => {
-        if (e.data.traceId !== traceId) {
-          return;
-        }
-        switch (e.data.type) {
-          case "setup":
-            workerState.settingCount--;
-            break;
-          case "resolve":
-            workerState.worker.removeEventListener("message", handler);
-            resolve(e.data.data);
-            break;
-          case "reject":
-            workerState.worker.removeEventListener("message", handler);
-            reject(e.data.error);
-            break;
-        }
-      };
-      workerState.worker.addEventListener("message", handler);
-      workerState.settingCount++;
-      workerState.worker.postMessage({ args, traceId });
+      argList.push({ args, resolve, reject });
+      // 如果有空闲worker立即执行。
+      const workerStateIndex = workerStateList.findIndex(
+        (item) => item.settingCount === 0
+      );
+      const workerState = workerStateList[workerStateIndex];
+      if (workerState) {
+        exec(workerState);
+        workerStateList.splice(workerStateIndex, 1);
+        workerStateList.push(workerState);
+      }
     });
     return promise;
   };
